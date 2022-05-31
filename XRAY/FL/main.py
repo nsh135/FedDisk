@@ -202,10 +202,10 @@ if __name__=="__main__":
                 clients[i]['vae_test_dataset'] = (tf.data.Dataset.from_tensor_slices(X_test)
                         .shuffle(X_test.shape[0]).batch(args.vae_batch))
                 #for density made model
-                if not toGrey: # dim = 28x28x3
+                if not toGrey: # dim = 64x64x3
                     clients[i]['made_train_dataset'] = np.mean(X_train, axis=-1).reshape((X_train.shape[0],-1) )
                     clients[i]['made_test_dataset'] = np.mean(X_test, axis=-1).reshape((X_test.shape[0],-1) )
-                else:# dim = 28x28x1
+                else:# dim = 64x64x1
                     clients[i]['made_train_dataset'] = X_train.reshape((X_train.shape[0],-1) )
                     clients[i]['made_test_dataset'] = X_test.reshape((X_test.shape[0],-1) )
                 
