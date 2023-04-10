@@ -18,11 +18,11 @@ from tensorflow.keras.regularizers import l2
 
 tf.config.run_functions_eagerly(True)
 
-toGrey = True
+toGrey = True # whether need to convert color images to grey
 if toGrey:
-    digit_input_shape = (64,64,1)
+    digit_input_shape = (32,32,1)
 else:
-    digit_input_shape = (64,64,3)
+    digit_input_shape = (32,32,3)
 digit_num_classes = 2
 
 
@@ -92,27 +92,12 @@ class benchmark_models():
         model.add(Flatten())
         model.add(Dense(num_neuron, kernel_initializer='he_uniform'))
         model.add(Activation('relu'))
-        model.add(Dense(2))
-        bce = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+        model.add(Dense(1, activation='sigmoid'))
+        bce = tf.keras.losses.BinaryCrossentropy(from_logits=False)
         opt = tf.keras.optimizers.Adam(learning_rate=0.01)
         model.compile(optimizer=opt, loss=bce, metrics=['accuracy'])
         return model
-    def shallow_model_1d(num_neuron):
-        """ shallow model to determine sample weights"""
-        model = Sequential()
-        model.add(Conv2D(64, (3, 3), kernel_initializer='he_uniform', padding='same', input_shape=digit_input_shape))
-        model.add(Activation('relu'))
-        model.add(Conv2D(32, (3, 3), kernel_initializer='he_uniform', padding='same'))
-        model.add(Activation('relu'))
-        model.add(MaxPooling2D((2, 2)))
-        model.add(Flatten())
-        model.add(Dense(num_neuron, kernel_initializer='he_uniform'))
-        model.add(Activation('relu'))
-        model.add(Dense(2))
-        bce = tf.keras.losses.BinaryCrossentropy(from_logits=True)
-        opt = tf.keras.optimizers.Adam(learning_rate=0.01)
-        model.compile(optimizer=opt, loss=bce, metrics=['accuracy'])
-        return model
+    
 
     def fnn_model(num_neuron, input_shape):
         """ shallow model to determine sample weights"""

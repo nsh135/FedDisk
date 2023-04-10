@@ -1,9 +1,11 @@
 # FedDisk
 
 
-#Environment 
-conda create --name tensorflow2 --file requirments.txt 
-conda activate tensorflow2
+# Environment 
+conda env create -f environment.yml
+conda activate fedDisk
 
+# Run experiment 
+Python main.py
 
-#dataset  https://leaf.cmu.edu/
+# Dataset  https://leaf.cmu.edu/

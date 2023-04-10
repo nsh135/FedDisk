@@ -26,9 +26,9 @@ import random, glob
 os.environ['PYTHONHASHSEED'] = '0'
 
 datasets = [ 'ChinaSet','chest', 'lung' ]
-callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=3)
+
 n_classes = 2
-image_size = (64,64)
+image_size = (32,32)
 row=column=image_size[0]
 
 # prepare Logs directory 
@@ -40,6 +40,7 @@ figures_dir= log_dir + '/Figures'
 models_dir = log_dir + '/Models'
 #data path 
 
+callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
 
 if not os.path.exists(log_dir):
   os.makedirs(log_dir)
@@ -49,81 +50,130 @@ if not os.path.exists(figures_dir):
   os.makedirs(figures_dir+'/Samples')
 
 
-def prepare_data(dataset):
+def prepare_data(args):
     """
-    dataset names: 
+    Append Data for each client 
     """
-    if dataset == 'ChinaSet':
-        ChinaPath = '../DATA_XRAY/ChinaSet_AllFiles/CXR_png/*.png'
-        image_list = []
-        labels = []
-        for id,filename in enumerate(glob.glob(ChinaPath)): #assuming gif
-            im=Image.open(filename)
-            im = im.resize(image_size)
-            im = np.asarray(im)/255
-            if len(im.shape)==3: im = np.mean(im,axis=-1)
-            l = filename.split('_')[-1][0]
-            labels.append(int(l=='1'))
-            image_list.append(im)
-            if id > 650: break
-    elif dataset=='chest':
-        normal = '../DATA_XRAY/chest_xray/train/NORMAL/*.jpeg'
-        abnormal = '../DATA_XRAY/chest_xray/train/PNEUMONIA/*.jpeg'
-        image_list = []
-        labels = []
-        for l,path in enumerate([normal,abnormal]):
-            for id,filename in enumerate(glob.glob(path)): #assuming gif
-                im=Image.open(filename)
-                im = im.resize(image_size)
-                im = np.asarray(im)/255
-                if len(im.shape)==3: im = np.mean(im,axis=-1)
-                labels.append(l)
-                image_list.append(im)
-                if id > 650: break
-    elif dataset=='lung':
-        normal = '../DATA_XRAY/COVID-19_Radiography_Dataset/Normal/*.png'
-        abnormal = '../DATA_XRAY/COVID-19_Radiography_Dataset/Lung_Opacity/*.png'
-        image_list = []
-        labels = []
-        for l,path in enumerate([normal,abnormal]):
-            for id,filename in enumerate(glob.glob(path)): #assuming gif
-                im=Image.open(filename)
-                im = im.resize(image_size)
-                im = np.asarray(im)/255
-                if len(im.shape)==3: im = np.mean(im,axis=-1)
-                labels.append(l)
-                image_list.append(im)
-                if id > 650: break
-
-    #resize images and scale (/255)
-    X = np.array(image_list)
-    X = X.reshape((-1, image_size[0],image_size[1],1 ))
-    y = np.array(labels)
-
-    #convert to grey
+    print("Loading datasets...")
+    datasets_max_size = {'ChinaSet':660, 'chest': 5200, 'lung': 16000 } #  corresponding to [ 'ChinaSet','chest', 'lung' ]
+    if args.n_clients == 3:
+        per_clt_size = 500
+        datasets_max_size = {'ChinaSet':per_clt_size, 'chest': per_clt_size, 'lung': per_clt_size } # 500, 500, 500
+    elif args.n_clients == 10:
+        per_clt_size = 500
+        datasets_max_size = {'ChinaSet':per_clt_size * 1, 'chest': per_clt_size * 4, 'lung': per_clt_size * 5 }  # 500, 2000, 2500
+    elif args.n_clients == 20:
+        per_clt_size = 300
+        datasets_max_size = {'ChinaSet':per_clt_size * 2, 'chest': per_clt_size * 8, 'lung': per_clt_size * 10 }
+    elif args.n_clients == 50:
+        per_clt_size = 300
+        datasets_max_size = {'ChinaSet':per_clt_size * 2, 'chest': per_clt_size * 15, 'lung': per_clt_size * 33 } # 600, 4500, 9900
+    else:
+        raise Exception("Sorry, number of clients must be one of these: 3, 10, 50")
     
-    x_recover = np.rint(X[0,:,:,0]*255).astype(np.uint8)
-    pil_image1=Image.fromarray(x_recover, mode='L')
-    pil_image1.save(figures_dir + '/Samples/img_after_resized_{}_{}.jpg'.format(dataset, y[0]))
+    # initiate clients
+    clients =[]
+    client_ID = 0
+    for dataset in datasets:
+        if dataset == 'ChinaSet':
+            ChinaPath = '../DATA_XRAY/ChinaSet_AllFiles/CXR_png/*.png'
+            image_list = []
+            labels = []
+            for id,filename in enumerate(glob.glob(ChinaPath)): #assuming gif
+                im=Image.open(filename)
+                im = im.resize(image_size)
+                im = np.asarray(im)/255
+                im = 1-im #flip black-white to white-black
+                if len(im.shape)==3: im = np.mean(im,axis=-1)
+                l = filename.split('_')[-1][0]
+                labels.append(int(l=='1'))
+                image_list.append(im)
+                if id >= datasets_max_size[dataset]: break
 
-    # permutation 
-    X, _, y, _ = train_test_split(X, y, test_size=0.001, random_state=42)
-    X_train = X[:300]; y_train = y[:300]
-    X_test = X[300:400]; y_test = y[300:400]
+        elif dataset=='chest':
+            normal = '../DATA_XRAY/chest_xray/train/NORMAL/*.jpeg'
+            abnormal = '../DATA_XRAY/chest_xray/train/PNEUMONIA/*.jpeg'
+            image_list = []
+            labels = []
+            for l,path in enumerate([normal,abnormal]):
+                for id,filename in enumerate(glob.glob(path)): #assuming gif
+                    im=Image.open(filename)
+                    im = im.resize(image_size)
+                    im = np.asarray(im)/255
+                    if len(im.shape)==3: im = np.mean(im,axis=-1)
+                    labels.append(l)
+                    image_list.append(im)
+                    if id >= datasets_max_size[dataset]: break
+        elif dataset=='lung':
+            normal = '../DATA_XRAY/COVID-19_Radiography_Dataset/Normal/*.png'
+            abnormal = '../DATA_XRAY/COVID-19_Radiography_Dataset/Lung_Opacity/*.png'
+            image_list = []
+            labels = []
+            for l,path in enumerate([normal,abnormal]):
+                for id,filename in enumerate(glob.glob(path)): #assuming gif
+                    im=Image.open(filename)
+                    im = im.resize(image_size)
+                    im = np.asarray(im)/255
+                    if len(im.shape)==3: im = np.mean(im,axis=-1)
+                    labels.append(l)
+                    image_list.append(im)
+                    if id >= datasets_max_size[dataset]: break
 
-    print("Loading Dataset: {}".format(dataset))
-    print("X_train.shape: {}".format( X_train.shape) )
-    print("y_train.shape: {}".format( y_train.shape) )
-    print("X_test.shape: {}".format(X_test.shape))
-    print("y_test.shape: {}".format( y_test.shape))
-    # print("Samples: {}:{}".format( X_train[0], y_train[0]))
-    return X_train, y_train, X_test, y_test
+        #resize images and scale (/255)
+        X = np.array(image_list)
+        X = X.reshape((-1, image_size[0],image_size[1],1 ))
+        y = np.array(labels)
+        #perturb data
+        X , _ , y , _ = train_test_split(X,y,test_size=0.001,random_state=42)
+
+        #convert to grey
+        
+        x_recover = np.rint(X[0,:,:,0]*255).astype(np.uint8)
+        pil_image1=Image.fromarray(x_recover, mode='L')
+        pil_image1.save(figures_dir + '/Samples/img_after_resized_{}_{}.jpg'.format(dataset, y[0]))
+
+        
+        
+        # assign dataset to corresponding clients
+        partition_start_idx = 0
+        while partition_start_idx < datasets_max_size[dataset]:
+            # permutation 
+            X_train, X_test, y_train, y_test = \
+                train_test_split(X[partition_start_idx:partition_start_idx+per_clt_size], \
+                                y[partition_start_idx:partition_start_idx+per_clt_size], test_size=0.2, random_state=42)
+
+            clients.append(
+                {'client_ID' : client_ID,\
+                'dataset':dataset, \
+                'X_train': X_train, \
+                'y_train': y_train, \
+                'X_test': X_test,\
+                'y_test': y_test ,\
+                'histories':[],\
+                'acc':[], \
+                'sample_weights' : None  } )
+            #update partition_start_idx
+            partition_start_idx += per_clt_size
+            client_ID += 1
+
+            print("Client {} (0-index) :".format(clients[-1]['client_ID']))
+            print("Dataset loaded: {}".format(dataset))
+            print("X_train.shape: {}".format( X_train.shape) )
+            print("y_train.shape: {}".format( y_train.shape) )
+            print("X_test.shape: {}".format(X_test.shape))
+            print("y_test.shape: {}".format( y_test.shape))
+            # print("Samples: {}:{}".format( X_train[0], y_train[0]))
+    print("Finish loading data to clinents!")
+    return clients
 
 
 def normalize(x):
     """ normalize array x to [0,1]"""
-    r = (x-np.min(x))/(np.max(x) - np.min(x))*2
-    print("******r:{} \nmean r:{} std r:{}".format(x, np.mean(r[:10]) , np.std(r) ))
+    if (np.max(x) - np.min(x)) != 0:
+        r = (x-np.min(x))/(np.max(x) - np.min(x))*2
+    else:
+        r=x/x
+    print("**sample clf output (p) and weights normalized normalized:{} \nmean r:{} std r:{}".format(x[:10], np.mean(r[:10]) , np.std(r) ))
     return r
 
 
@@ -136,20 +186,17 @@ if __name__=="__main__":
     parser.add_argument('--params_search', type = bool, default= False, help ='test  with the pretrained model')
     parser.add_argument('--lr', type=float, default=1e-2, help='learning rate')
     parser.add_argument('--batch', type = int, default= 32, help ='batch size')
-    parser.add_argument('--n_clients', type = int, default= 3, help ='number of clients between 2-5')
-    parser.add_argument('--iters', type = int, default=15, help = 'global training iterations')
-    parser.add_argument('--vae_iters', type = int, default=100, help = 'vae iterations')
-    parser.add_argument('--vae_latent_dim', type = int, default=10, help = 'vae latent dimention')
-    parser.add_argument('--vae_batch', type = int, default= 128, help ='batch size for training vae')
-    parser.add_argument('--made_iters', type = int, default=20, help = 'MADE iterations')
-    parser.add_argument('--made_hidden_neurons', type = int, default=1000, help = 'number of neuron per layer for MADE model')
-    parser.add_argument('--made_hidden_layers', type = int, default=3, help = 'number of hidden layers in MADE model')
-    parser.add_argument('--made_batch', type = int, default= 32, help ='batch size for training vae')
+    parser.add_argument('--n_clients', type = int, default= 3, help ='number of clients among 3,10,50')
+    parser.add_argument('--global_iters', type = int, default=15, help = 'global training iterations')
+    parser.add_argument('--made_iters', type = int, default=300, help = 'MADE iterations')
+    parser.add_argument('--made_hidden_neurons', type = int, default=2000, help = 'number of neuron per layer for MADE model')
+    parser.add_argument('--made_hidden_layers', type = int, default=2, help = 'number of hidden layers in MADE model')
+    parser.add_argument('--made_batch', type = int, default= 64, help ='batch size for training made')
     parser.add_argument('--logistic_iter', type = int, default=50, help = 'max logistic regression iterations')
-    parser.add_argument('--shallow_neuron', type = int, default= 200, help ='number of neuron for shallow network(calculating weight)')
-    parser.add_argument('--shallow_iters', type = int, default= 10, help ='number of itersation for shallow network')
+    parser.add_argument('--shallow_neuron', type = int, default= 100, help ='number of neuron for shallow network (adversarial training for calculating weight)')
+    parser.add_argument('--shallow_iters', type = int, default= 20, help ='number of iteration for the adversarial training')
     parser.add_argument('--note',  default= '', help ='A note will be written down in the log')
-    parser.add_argument('--correction_method',  default= 'density_weight', choices= ['data_weight','density_weight'])
+    parser.add_argument('--correction_method',  default= 'MADE_weight', choices= ['data_weight','MADE_weight'])
     parser.add_argument('--model_path',  default='', help = 'an existing log dir where models were stored ')
 
     global args
@@ -183,33 +230,26 @@ if __name__=="__main__":
     final_results= []
     for param in params:
         made_iters, made_hidden_neurons, made_hidden_layers, made_batch, shallow_iters = param
+
         #store trial results
-        trial_results= {}
+        trial_results=[]
         for i in range(args.n_clients):
-            trial_results[datasets[i]] = []
+            trial_results.append([])
+            trial_results[-1] = []
 
         for trial in range(args.n_trials):
             print("\n----------TRIAL {}/{}-----------".format(trial,args.n_trials))
             # prepare data and Clients dictionary to store variables
-            clients=[] ## list of clients , each contains a dict of data and model
-            for i in range(args.n_clients):
-                X_train, y_train, X_test, y_test = prepare_data(dataset=datasets[i])
-                clients.append({'dataset':datasets[i], 'X_train': X_train, 'y_train': y_train, \
-                    'X_test': X_test, 'y_test': y_test ,'histories':[], 'acc':[],\
-                    'sample_weights' : None  } )
-                clients[i]['vae_train_dataset'] = (tf.data.Dataset.from_tensor_slices(X_train)
-                        .shuffle(X_train.shape[0]).batch(args.vae_batch))
-                clients[i]['vae_test_dataset'] = (tf.data.Dataset.from_tensor_slices(X_test)
-                        .shuffle(X_test.shape[0]).batch(args.vae_batch))
-                #for density made model
-                if not toGrey: # dim = 64x64x3
-                    clients[i]['made_train_dataset'] = np.mean(X_train, axis=-1).reshape((X_train.shape[0],-1) )
-                    clients[i]['made_test_dataset'] = np.mean(X_test, axis=-1).reshape((X_test.shape[0],-1) )
-                else:# dim = 64x64x1
-                    clients[i]['made_train_dataset'] = X_train.reshape((X_train.shape[0],-1) )
-                    clients[i]['made_test_dataset'] = X_test.reshape((X_test.shape[0],-1) )
+            clients = prepare_data(args) ## list of clients , each contains a dict of datacat out and model
+            for client in clients:
+                #  assign data to train density made model
+                if not toGrey: # e.g., dim = 64x64x3
+                    client['made_train_dataset'] = np.mean(client['X_train'], axis=-1).reshape((client['X_train'].shape[0],-1) )
+                    client['made_test_dataset'] = np.mean(client['X_test'], axis=-1).reshape((client['X_test'].shape[0],-1) )
+                else:# e.g. dim = 64x64x1
+                    client['made_train_dataset'] = client['X_train'].reshape(( client['X_train'].shape[0],-1) )
+                    client['made_test_dataset'] = client['X_test'].reshape(( client['X_test'].shape[0],-1) )
                 
-
 
             ## Initiate classification models
             for i in range(args.n_clients):
@@ -219,86 +259,54 @@ if __name__=="__main__":
                     clients[i]['model'] = benchmark_models.digit_model_fedbn()
                 elif args.model == 'fedisk':
                     clients[i]['model'] = benchmark_models.digit_model_fedDisk()
-                #vae model
-                clients[i]['vae_model'] = CVAE(args.vae_latent_dim)
-                clients[i]['vae_global_model'] = CVAE(args.vae_latent_dim)
                 #MADE model
                 clients[i]['made_model'] = made_model(hidden_units = made_hidden_neurons,hidden_layers = made_hidden_layers,learning_rate = 0.001,dropout = 0.1)
                 clients[i]['made_model_global'] = made_model(hidden_units = made_hidden_neurons,hidden_layers = made_hidden_layers,learning_rate = 0.001,dropout = 0.1)
                 
 
-            ## ---------------------Train VAEs -------------------------------------
-
-            ##support function
+            # ## ---------------------Train Auxilary model -------------------------------------
             
-            if args.model=='fedisk' :
-                if args.correction_method == 'vae_weight':
-                    print("**USING VAE WEIGHTING")
-                # Training vae locally
-                    for client in clients:
-                        print("Train VAE for client holding: {} dataset".format(client['dataset']))
-                        vae_training(args.vae_iters, client, model_name='vae_model')
-                    
-                    ## Training global VAE using FL 
-                    print("Train global VAE.")
-                    for i in range(args.vae_iters+30):
-                        for client in clients:
-                            vae_training(1, client, model_name='vae_global_model')
-                        w_cl = []
-                        for num in range(args.n_clients):
-                            w_cl.append(np.asarray(clients[num]['vae_global_model'].get_weights()) )
-                        mean = np.mean(np.array(w_cl),axis=0)
-                        for client in clients:
-                            client['vae_global_model'].set_weights(mean)
-                
-            ###------------   Train a logistic classifier to get the sample weights---------------
-                    for client in clients:  
-                        mean, logvar = client['vae_model'].encode(client['X_train'])
-                        z_local = client['vae_model'].reparameterize(mean, logvar) 
-                        z_local_label = np.zeros(len(z_local))
-                        mean, logvar = client['vae_global_model'].encode(client['X_train'])
-                        z_global = client['vae_global_model'].reparameterize(mean, logvar)
-                        z_global_label = np.ones(len(z_global) )
-                        big_z  = np.concatenate( (z_local,z_global), axis=0 )
-                        big_z_label = tf.keras.utils.to_categorical(np.concatenate((z_local_label , z_global_label ), axis=0 ))
-                        clf = benchmark_models.fnn_model(args.shallow_neuron, (args.vae_latent_dim,)) 
-                        clf.fit(big_z, big_z_label,  shuffle=True,epochs=shallow_iters,batch_size=32, \
-                            verbose=2,validation_split = 0.1, callbacks=[callback] )
-                        client['sample_weights'] =  normalize(clf.predict(z_local)[:,1])
-                        print("20 Sample weight samples: {}".format(client['sample_weights'][0:20]) )
-                        CVAE.generate_and_save_images(client['vae_model'], args.vae_iters, client['X_train'][0:16], log_dir=figures_dir+'/Samples', \
-                            title='vae_local_{}'.format(client['dataset']))
-                        CVAE.generate_and_save_images(client['vae_global_model'], args.vae_iters, client['X_train'][0:16], log_dir=figures_dir+'/Samples', \
-                            title='vae_global_{}'.format(client['dataset']))
-                
-                
+            if args.model=='fedisk' : 
                 ##------- train MADE model to estimate density globaly---------
-                elif args.correction_method=='density_weight':
-                    print("**USING DENSITY WEIGHTING")
+                if args.correction_method=='MADE_weight':
+                    print("** DENSITY WEIGHTING (Using MADE model)")
                     learning_rate = 0.001
                     early_stopping = tf.keras.callbacks.EarlyStopping('val_loss', min_delta=0.1, patience=5)
-                    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=0.001 * learning_rate)
+                    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=2, min_lr=0.001 * learning_rate)
+                    callbacks = [ early_stopping, reduce_lr]
 
-                    ##train made locally
+                    ## train made locally
                     for client in clients:
                         if args.model_path:  
                             print("Loading density models from {}".format(args.model_path))
-                            client['made_model'] = tf.keras.models.load_model('../Logs/{}/Models/made_model_{}'.format(args.model_path,client['dataset']))
+                            client['made_model'] = tf.keras.models.load_model('../Logs/{}/Models/made_model_client_{}'.format(args.model_path,client['client_ID']))
                         else:
-                            print("Training MADE for client holding: {} dataset".format(client['dataset']))
+                            print("Training MADE for client {} holding: {} dataset".format(client['client_ID'], client['dataset']))
                             client['made_model'].fit(client['made_train_dataset'], client['made_train_dataset'],\
                                     epochs=made_iters, batch_size= made_batch, verbose=2,
-                                    callbacks=[ early_stopping, reduce_lr],validation_data=(client['made_test_dataset'], client['made_test_dataset']),)
+                                    callbacks=callbacks,validation_data=(client['made_test_dataset'], client['made_test_dataset']),)
                         
                         yhat = client['made_model'].predict(client['made_test_dataset'])
-                        display_digits(yhat, n=7, title=figures_dir+"/MADE_{}".format(client['dataset']))
-                        client['made_model'].save(models_dir + '/made_model_{}'.format(client['dataset']))
+                        display_digits(yhat, n=7, title=figures_dir+"/MADE_client_{}".format(client['client_ID']))
+                        client['made_model'].save(models_dir + '/made_model_client_{}'.format(client['client_ID']))
                     
-                    if  not args.model_path: 
+                    ## clients joinly train global MADE model and aggregating
+                    if  not args.model_path:   
+                        avg_global_val_loss_over_iters = [] #over made_iters
                         for i in range(made_iters):
+                            #check if Made global become overfiting 
+                            if len(avg_global_val_loss_over_iters)> 5 \
+                                and avg_global_val_loss_over_iters[-3] < avg_global_val_loss_over_iters[-2] < avg_global_val_loss_over_iters[-1] :
+                                print("MADE val loss greater than previous step causing overfitting. \nBreak training after {} global iteration. ".format(i))
+                                break
+                            avg_global_val_loss_each_iter = []
                             for client in clients:
                                 history =  client['made_model_global'].fit(client['made_train_dataset'], client['made_train_dataset'],\
-                                    epochs=1, batch_size= made_batch, verbose=2)
+                                    epochs=1, batch_size= made_batch, verbose=2, validation_data=(client['made_test_dataset'], client['made_test_dataset']))
+                                avg_global_val_loss_each_iter.append(history.history['val_loss'])
+                            mean_loss = np.mean(np.array(avg_global_val_loss_each_iter))
+                            print("Average val loss of global made over clients:{}".format(mean_loss))
+                            avg_global_val_loss_over_iters.append(mean_loss)
                             # Agregating models' weights 
                             w_cl = []
                             for num in range(args.n_clients):
@@ -308,40 +316,41 @@ if __name__=="__main__":
                             for client in clients:
                                 client['made_model_global'].set_weights(mean)
 
-                        #save all flobal model
+                        #save all global model
                         for client in clients:
-                            client['made_model_global'].save(models_dir + '/made_model_global_{}'.format(client['dataset']))
+                            client['made_model_global'].save(models_dir + '/made_model_global_{}'.format(client['client_ID']))
                     else:# load global model
                         for client in clients:
-                            client['made_model_global']=tf.keras.models.load_model('../Logs/{}/Models/{}/made_model_global_{}'.format(args.model_path,client['dataset']))
+                            client['made_model_global']=tf.keras.models.load_model('../Logs/{}/Models/{}/made_model_global_{}'.format(args.model_path,client['client_ID']))
 
                     for client in clients:
-                        print("-Train shallow network to find sample weights for client {}".format(client['dataset']))
+                        print("-Train shallow network to find sample weights for client {}".format(client['client_ID']))
                         ## Sanity check images 
                         yhat = client['made_model_global'].predict(client['made_train_dataset'])
-                        display_digits(yhat, n=7, title=figures_dir+"/MADE_Global_{}".format(client['dataset']))
+                        display_digits(yhat, n=7, title=figures_dir+"/MADE_Global_{}".format(client['client_ID']))
                         #
                         z_local = client['made_model'].predict(client['made_train_dataset']) 
                         z_local_label = np.zeros(len(z_local))
                         z_global = client['made_model_global'].predict(client['made_train_dataset'])
                         z_global_label = np.ones(len(z_global) )
                         big_z  = np.concatenate( (z_local,z_global), axis=0 )
-                        big_z_label = tf.keras.utils.to_categorical(np.concatenate((z_local_label , z_global_label ), axis=0 ))
+                        big_z_label = np.concatenate((z_local_label , z_global_label ))
                         #if using fnn
-                        using_shallow_1d = True
-                        if not using_shallow_1d:
+                        using_shallow_fnn = False
+                        if  using_shallow_fnn:
                             clf = benchmark_models.fnn_model(args.shallow_neuron, (z_local.shape[1],)) 
-                        else: 
-                            clf = benchmark_models.shallow_model_1d(args.shallow_neuron)
+                        else: #using cnn
+                            clf = benchmark_models.shallow_model(args.shallow_neuron)
                             big_z = big_z.reshape((-1,row,column,1))
                         clf.fit(big_z, big_z_label,  shuffle=True,epochs=shallow_iters,batch_size=32, \
                             verbose=2,validation_split = 0.1, callbacks=[callback] )
                         #get output for train set
                         z_train = client['made_model'].predict(client['made_train_dataset']) 
-                        if using_shallow_1d: z_train = z_train.reshape((-1,row,column,1))
-                        p = clf.predict(z_train)[:,1]
-                        client['sample_weights'] =  normalize(p/(1-p))
+                        if not using_shallow_fnn: z_train = z_train.reshape((-1,row,column,1))
+                        p = clf.predict(z_train)[:0]
+                        client['sample_weights'] =  1 -abs(0.5-p)*2 
                         print("20 Sample weight samples: {}".format(client['sample_weights'][0:20]) )
+
                 elif args.correction_method=='data_weight':
                     print("---Train Correction Network (Data weighting)---")
                     for k in range(args.n_clients):
@@ -352,27 +361,38 @@ if __name__=="__main__":
                         shallow_model = benchmark_models.shallow_model(args.shallow_neuron)
                         combine_X = np.concatenate( (clients[k]['X_train'], big_X))
                         combine_y = np.concatenate( (np.zeros(len(clients[k]['y_train'])), np.ones(len( big_y) ) ) )
-                        combine_y = tf.keras.utils.to_categorical( combine_y, num_classes=2 )
                         print("Local Training X shape : {}  y shape {}".format(clients[k]['X_train'].shape,clients[k]['y_train'].shape))
                         print("Big Training X shape : {}  y shape {}".format(big_X.shape,big_y.shape))
                         print("combine_X shape : {}  combine_y shape {}".format(combine_X.shape,combine_y.shape))
                         shallow_model.fit( combine_X, combine_y, shuffle=True,epochs=shallow_iters,batch_size=32, \
                             verbose=2,validation_split = 0.15, callbacks=[callback] )
-                        p = shallow_model.predict(clients[k]['X_train'])[:,1]
-                        clients[k]['sample_weights'] =  normalize( p/(1-p))
-                        # clients[k]['sample_weights'] =  shallow_model.predict(clients[k]['X_train'])
-                        print("50 Sample weight samples: {}".format(clients[k]['sample_weights'][0:20]) )
+                        p = shallow_model.predict(clients[k]['X_train'])
+                        #print("***DEBUG: output prediction from shallow network: {}".format(shallow_model.predict(clients[k]['X_train'])))
+                        clients[k]['sample_weights'] = 1 -abs(0.5-p)*2 
+                        print("20 Sample weight samples: {}".format(clients[k]['sample_weights'][0:20]) )
                         print("----")
 
 
             ## ----------------------Train FL models--------------------
             print('-Training FL Classifier ')
-            for i in range(args.iters):
+            mean_val_loss_over_inters = []
+            for i in range(args.global_iters):
+                if i>5 and mean_val_loss_over_inters[-3] < mean_val_loss_over_inters[-2] < mean_val_loss_over_inters[-1]:
+                    print("Federated Learning becomes overfitting with average val_loss over iters: {} ".format(mean_val_loss_over_inters))
+                    print("Break training at iteration {}".format(i))
+                    break 
+                val_loss_over_clients = []
                 for client in clients:
-                    history =  client['model'].fit(client['X_train'], to_categorical(client['y_train'],n_classes),\
-                        validation_split = 0.1,sample_weight= client['sample_weights'], epochs=1, batch_size= args.batch, verbose=2)
+                    history =  client['model']\
+                        .fit(client['X_train'], to_categorical(client['y_train'],n_classes),\
+                            validation_split = 0.1,sample_weight= client['sample_weights'], \
+                            epochs=1, batch_size= args.batch, verbose=2,\
+                            validation_data=(client['X_test'], to_categorical(client['y_test'],n_classes)) )
                     client['histories'].append(history.history)
-
+                    val_loss_over_clients.append(history.history['val_loss'] )
+                mean_val_loss = np.mean(np.array(val_loss_over_clients))
+                mean_val_loss_over_inters.append(mean_val_loss)
+                print("Mean Val Loss over clients: {}".format(mean_val_loss))
                 # Agregating models' weights 
                 w_cl = []
                 for num in range(args.n_clients):
@@ -388,9 +408,9 @@ if __name__=="__main__":
             avg_acc = 0
             for c, client in enumerate(clients):
                 client['acc'].append( client['model'].evaluate(client['X_test'],to_categorical(client['y_test'],n_classes), verbose=0)[1]*100 )
-                print("Client {}   Acc: {:.2f}".format(client["dataset"].ljust(13), client['acc'][-1]) )
+                print("Client {}, dataset {}   Acc: {:.2f}".format(client['client_ID'],client["dataset"].ljust(13), client['acc'][-1]) )
                 avg_acc += client['acc'][-1]
-                trial_results[client["dataset"]].append(client['acc'][-1]) # store results to global trials
+                trial_results[client["client_ID"]].append(client['acc'][-1]) # store results to global trials
             print("Average Acc: {:.2f}".format(avg_acc/args.n_clients))
 
         
@@ -399,16 +419,15 @@ if __name__=="__main__":
         # log experiment parameters 
         print("--------Experiment Parameters-----")
         print("***Note : {}".format(args.note))
-        print("- Correction method: {}".format(args.correction_method))
+        print("- Correction method: {}".format(args.correction_method if args.model=="fedisk" else "NA"))
         print("- Datasets        : {}".format(datasets))
         print("- Model           : {}".format(args.model))
+        print("- n_clients        : {}".format(args.n_clients))
         print("- n_trials        : {}".format(args.n_trials))
         print("- Seed            : {}".format(args.seed))
         print("- Logist MaxIters : {}".format(args.logistic_iter))
         print("- N0 of Clients   : {}".format(args.n_clients))
-        print("- Global Iteration: {}".format(args.iters))
-        print("- VAE iteration   : {}".format(args.vae_iters))
-        print("- VAE Latent Dim  : {}".format(args.vae_latent_dim))
+        print("- Global Iteration: {}".format(args.global_iters))
         print("- MADE iteration  : {}".format(made_iters))
         print("- MADE layers     : {}".format(made_hidden_layers))
         print("- MADE neurons    : {}".format(made_hidden_neurons))
@@ -418,16 +437,16 @@ if __name__=="__main__":
         
         print("\n----------FINAL AVERAGE ACC OVER {} TRIALS-----------".format(args.n_trials))
         avg=[]
-        for i in range(args.n_clients):
-            avg.append( np.mean(np.array(trial_results[datasets[i]]) ) )
-            print("Client {}   Acc: {:.2f}".format(datasets[i].ljust(13), avg[-1]) )
+        for client in clients:
+            avg.append( np.mean(np.array(trial_results[client['client_ID']]) ) )
+            print("Client {}   Acc: {:.2f}".format(client['client_ID'], avg[-1]) )
         final_avg = np.mean(np.array(avg))
-        print("Average Acc: {:.2f}".format(final_avg ) )
+        print("Average Acc: {:.2f} ".format(final_avg) )
         final_results.append( (final_avg, param) )
     
     
     print("--------------Final result including tuning params------------")
-    print("(Acc, (made_iters, made_hidden_neurons, made_hidden_layers, made_batch, shallow_iters ))")
+    print("(Avg_Acc, Std, (made_iters, made_hidden_neurons, made_hidden_layers, made_batch, shallow_iters ))")
     final_results.sort(key=lambda result:result[0])
     print("Sorted: \n{}".format(str(final_results) ))
 
@@ -435,11 +454,7 @@ if __name__=="__main__":
     # remove model in clients to be able to pickle
     for client in clients:
         try:
-            client['model']            =None
-            client['vae_model']        =None
-            client['vae_global_model'] =None
-            client['vae_train_dataset']=None
-            client['vae_test_dataset'] =None
+            client['model']            = None
             client['made_model_global'] = client['made_model'] = None
             client['made_test_dataset'] = client['made_train_dataset'] =None 
         except:

@@ -25,7 +25,7 @@ from tensorflow.keras.layers import InputSpec
 
 
 
-r=c=64
+row = column = 32
 hidden_units = 10
 hidden_layers = 5
 learning_rate = 0.01
@@ -183,11 +183,11 @@ class MaskingDense(Layer):
 def logx_loss(x, x_decoded_mean):
     x = K.flatten(x)
     x_decoded_mean = K.flatten(x_decoded_mean)
-    xent_loss = r * c * metrics.binary_crossentropy(x, x_decoded_mean)
+    xent_loss = row * column * metrics.binary_crossentropy(x, x_decoded_mean)
     return xent_loss
 
 
-def display_digits(X, digit_size=r, n=10,title=""):
+def display_digits(X, digit_size=row, n=10,title=""):
     figure = np.zeros((digit_size * n, digit_size * n))
     
     for i in range(n):
@@ -210,7 +210,7 @@ def gen_image(model, num_samples=10):
     x_sample = np.random.rand(num_samples, r * c)
     
     # Iteratively generate each conditional pixel P(x_i | x_{1,..,i-1})
-    for i in range(0, r * c):
+    for i in range(0, row * column):
         x_out = model.predict(x_sample)
             
         p = np.random.rand(num_samples)
@@ -219,9 +219,9 @@ def gen_image(model, num_samples=10):
         
     return x_sample
 
-def made_model(hidden_units = 200,hidden_layers = 5,learning_rate = 0.001,dropout = 0.3):
-    main_input = Input(shape=(r * c,), name='main_input')
-    mask_1 = MaskingDense(hidden_units, r * c, 
+def made_model(hidden_units = 1000,hidden_layers = 2,learning_rate = 0.001,dropout = 0.3):
+    main_input = Input(shape=(row * column,), name='main_input')
+    mask_1 = MaskingDense(hidden_units, row * column, 
                         hidden_layers=hidden_layers,
                         dropout_rate=dropout,
                         random_input_order=False)(main_input)
@@ -241,13 +241,13 @@ if __name__ =="__main__":
 
 
     (X_train, y_train), (X_test, y_test) = mnist.load_data()
-    X_train = np.round(X_train.reshape(X_train.shape[0], r * c) / 255.)
-    X_test = np.round(X_test.reshape(X_test.shape[0], r * c) / 255.)
+    X_train = np.round(X_train.reshape(X_train.shape[0], row * column) / 255.)
+    X_test = np.round(X_test.reshape(X_test.shape[0], row * column) / 255.)
 
     print(X_train.shape, y_train.shape)
     print(X_test.shape, y_test.shape)
 
-    display_digits(X_train, r, 5 , 'X_train')
+    display_digits(X_train, row, 5 , 'X_train')
 
     K.set_learning_phase(1)
     model = made_model()
@@ -273,12 +273,6 @@ if __name__ =="__main__":
     yhat = model.predict(X_test)
     display_digits(yhat, n=7, title="Test_hat")
 
-    # start = time.time()
-    # K.set_learning_phase(0)
-    # x_sample = gen_image(model, num_samples=100)
-    # display_digits(x_sample, n=7, title="genImage")
-    # done = time.time()
-    # elapsed = done - start
-    # print("Elapsed: ", elapsed)    
+
 
     

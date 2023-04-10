@@ -120,7 +120,7 @@ if __name__=="__main__":
     parser.add_argument('--shallow_neuron', type = int, default= 200, help ='number of neuron for shallow network(calculating weight)')
     parser.add_argument('--shallow_iters', type = int, default= 40, help ='number of itersation for shallow network')
     parser.add_argument('--note',  default= '', help ='A note will be written down in the log')
-    parser.add_argument('--correction_method',  default= 'density_weight', choices= ['data_weight','density_weight'])
+    parser.add_argument('--correction_method',  default= 'MADE_weight', choices= ['data_weight','MADE_weight'])
     parser.add_argument('--model_path',  default='', help = 'an existing log dir where models were stored ')
 
     global args
